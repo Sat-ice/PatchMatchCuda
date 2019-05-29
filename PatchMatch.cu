@@ -97,7 +97,7 @@ __device__ float  CostComputation_cu(const cudaTextureObject_t& l,
 
 	const float col_diff = l1_norm(tex2D<T>(l, pt_l.x + 0.5f, pt_l.y + 0.5f) - tex2D<T>(r, pt_r.x + 0.5f, pt_r.y + 0.5f));
 	/* const float col_dis = fminf(col_diff, tau_color); */
-	const float col_dis = fmin(col_diff, tau_color);
+	const float col_dis = fminf(col_diff, tau_color);
 
 	const T gx1 = tex2D<T>(l, pt_l.x + 1 + 0.5f, pt_l.y +     0.5f) - tex2D<T>(l, pt_l.x - 1 + 0.5f, pt_l.y     + 0.5f);
 	const T gy1 = tex2D<T>(l, pt_l.x     + 0.5f, pt_l.y + 1 + 0.5f) - tex2D<T>(l, pt_l.x     + 0.5f, pt_l.y - 1 + 0.5f);
@@ -108,7 +108,7 @@ __device__ float  CostComputation_cu(const cudaTextureObject_t& l,
 	const T grad_x_diff = (gx1 - gx2);
 	const T grad_y_diff = (gy1 - gy2);
 
-	const float grad_dis = fmin( (l1_norm(grad_x_diff) + l1_norm(grad_y_diff)) * 0.0625, tau_gradient);
+	const float grad_dis = fminf( (l1_norm(grad_x_diff) + l1_norm(grad_y_diff)) * 0.0625, tau_gradient);
 	/* const float grad_dis = fminf( (l1_norm(grad_x_diff) + l1_norm(grad_y_diff)) * 0.0625, tau_gradient); */
 
 	const float dis = (1.f - alpha) * col_dis + alpha * grad_dis;

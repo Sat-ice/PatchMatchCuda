@@ -64,7 +64,14 @@ __device__ void Normalize(float4* __restrict__ v)
 	v->y *= inverse_sqrt;
 	v->z *= inverse_sqrt;
 }
-
+__device__ void Normalize(float3* __restrict__ v)
+{
+	const float norm_squared = pow2(v->x) + pow2(v->y) + pow2(v->z);
+	const float inverse_sqrt = rsqrtf(norm_squared);
+	v->x *= inverse_sqrt;
+	v->y *= inverse_sqrt;
+	v->z *= inverse_sqrt;
+}
 __device__ float l1_norm(float f)
 {
 	return fabsf(f);
@@ -157,6 +164,33 @@ __device__ float EvaluatePlaneCost_cu(const int2 p, float4 normal, GlobalState& 
 	return cost;
 }
 
+
+template<typename T>
+__global__ void InitializeRandomDisparityPlane_cu(GlobalState& gs, int view)
+{
+	const int2 p = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
+	const int rows = gs.lines->rows;
+	const int cols = gs.lines->cols;
+	const float min_disparity = gs.params->min_disparity;
+	const float max_disparity = gs.params->max_disparity;
+
+	if(p.x >= cols)
+		return;
+	if(p.y >= rows)
+		return;
+	const int center = p.y * cols + p.x;
+	curandState local_state = gs.cs[center];
+	curand_init(clock64(), p.y, p.x, &local_state);
+	float3 norm;
+	gs.planes[view][center].point = make_float3(p.x,p.y,curand_between(&local_state, min_disparity, max_disparity));
+	
+	norm.x = curand_between(&local_state, 0.0f, 1.0f);
+	norm.y = curand_between(&local_state, 0.0f, 1.0f);
+	norm.z = curand_between(&local_state, 0.0f, 1.0f);
+	Normalize(&norm);
+	gs.planes[view][center].normal = norm;
+	gs.planes[view][center].caculateCoeff();
+}
 
 template<typename T>
 __global__ void InitializeRandomPlane_cu(GlobalState& gs)
@@ -340,6 +374,25 @@ __global__ void BlackPlaneRefinement_cu(GlobalState& gs)
 	CheckboardPlaneRefinement_cu<T>(gs, pt);
 }
 
+// template<typename T>
+// __global__ void PrecomputePixelsWeights_cu(GlobalState& gs, int index)
+// {
+// 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
+// 	int cols = gs.cols;
+// 	int rows = gs.rows;
+// 	if(pt.x >= cols)
+// 	return;
+// 	if(pt.y >= rows)
+// 	return;
+// 	int half = gs.params->box_width/2;
+// 	for(int x = pt.x - half; x <= pt.x + half; ++x)
+// 		for(int y = pt.y - half; y <= pt.y + half; ++y)
+// 			if(x >= 0 && y >= 0 && x < cols && y < rows)
+// 			{
+// 				Weight_cu<T>(tex2D<T>(gs.imgs[index], x + 0.5f, y + 0.5f), tex2D<T>(gs.imgs[0], pt.x + 0.5f, pt.y + 0.5f), gs.params->gamma);
+// 				weights.at<float>(cv::Vec<int,4> {cy, cx, y -cy +half, x -cx +half}) = Weight(image.at<cv::Vec3b>(cy, cx), image.at<cv::Vec3b>(y, x), this->gamma_);
+// 			}
+// }
 
 __global__ void ComputeDisparityMat_cu(GlobalState& gs)
 {
@@ -504,6 +557,9 @@ void PatchMatch(GlobalState& gs)
 
 	dim3 init_rand_block(32, 16, 1);
 	dim3 init_rand_grid((cols + init_rand_block.x - 1) / init_rand_block.x, (rows + init_rand_block.y - 1) / init_rand_block.y, 1);
+	cudaMalloc(&gs.cs, rows * cols * sizeof(disparityPlane));
+	InitializeRandomDisparityPlane_cu<T><<<init_rand_grid, init_rand_block>>>(gs,0);
+	InitializeRandomDisparityPlane_cu<T><<<init_rand_grid, init_rand_block>>>(gs,1);
 	InitializeRandomPlane_cu<T><<<init_rand_grid, init_rand_block>>>(gs);
 
 

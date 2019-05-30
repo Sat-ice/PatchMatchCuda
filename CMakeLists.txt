@@ -25,6 +25,7 @@ cuda_add_library(
 	UnifiedMemoryManaged.h
 	AlgorithmParameters.h
 	LineState.h
+	disparityPlane.h
 	GlobalState.h
 	PatchMatch.h PatchMatch.cu
 )

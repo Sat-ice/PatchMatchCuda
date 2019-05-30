@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-
 // Includes CUDA
 #include <cuda_runtime.h>
 #include <cuda.h>
@@ -139,18 +138,18 @@ int main(int argc, char** argv)
 
 	const time_t start = time(NULL);
 
-	for (int i = 0; i < name.size(); i ++)
+	for (int k = 0; k < name.size(); k ++)
 	{
 
-		std::cout << name[i] << std::endl;
+		std::cout << name[k] << std::endl;
 	//在目的文件夹中创建相应的文件夹，以便存入图片
-		std::string str = "resultImages1/" + name[i];
+		std::string str = "resultImages1/" + name[k];
 		const char * dir = str.c_str();
 		mkdir(dir, S_IRWXU);
 
 		//读取images文件夹中的源图片
-		cv::Mat img1 = cv::imread("dataset/" + name[i] + "/view1.png" , cv::IMREAD_COLOR );
-		cv::Mat img2 = cv::imread("dataset/" + name[i] + "/view5.png" , cv::IMREAD_COLOR );
+		cv::Mat img1 = cv::imread("dataset/" + name[k] + "/view1.png" , cv::IMREAD_COLOR );
+		cv::Mat img2 = cv::imread("dataset/" + name[k] + "/view5.png" , cv::IMREAD_COLOR );
 
 		if ( (!img1.data) || (!img2.data))
 
@@ -171,19 +170,20 @@ int main(int argc, char** argv)
 		AlgorithmParameters* params = new AlgorithmParameters();
 		params->min_disparity = 1.0f;
 		params->max_disparity = 80.f;
-		params->box_width = 11;
-		params->box_height = 11;
+		params->box_width = 31;
+		params->box_height = 31;
 		params->tau_color = tau_c;
 		params->tau_gradient = tau_g;
 		params->alpha = alpha;
 		params->gamma = gamma;
-
 
 		GlobalState* gs = new GlobalState();
 		gs->params = params;
 
 		int rows = img1.rows;
 		int cols = img1.cols;
+		gs->rows=rows;
+		gs->cols=cols;
 
 
 		std::vector<cv::Mat> imgs = {img1, img2};
@@ -251,9 +251,9 @@ int main(int argc, char** argv)
 
 			cv::medianBlur(disp, disp, 3);
 			disp = disp * 3;
-			cv::imwrite( "resultImages1/" + name[i] + "/" + name[i] + "_disp1.png", disp);
+			cv::imwrite( "dataset/" + name[k] + "/" + name[k] + "_disp1.png", disp);
 
-			cv::Mat standardLeft = cv::imread("dataset/" + name[i] + "/disp1.png", -1);
+			cv::Mat standardLeft = cv::imread("dataset/" + name[k] + "/disp1.png", -1);
 			float error_rate_left = Evaluate(standardLeft, disp);
 
 			disp.convertTo(disp, CV_8U);

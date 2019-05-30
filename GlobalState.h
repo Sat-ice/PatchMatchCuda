@@ -1,11 +1,10 @@
 #ifndef GLOBAL_STATE_H
 #define GLOBAL_STATE_H
 
-
 #include "UnifiedMemoryManaged.h"
 #include "AlgorithmParameters.h"
 #include "LineState.h"
-
+#include "disparityPlane.h"
 
 // Includes CUDA
 #include <cuda_runtime.h>
@@ -25,14 +24,18 @@
 class GlobalState : public UnifiedMemoryManaged
 {
 public:
-	LineState* lines;
+	LineState *lines;
 
-	curandState* cs;
-	AlgorithmParameters* params;
+	disparityPlane *planes1[2];
+	int cols, rows;
+
+	float *grax1, grax2, gray1, gray2, weigs1, weigs2;
+
+	curandState *cs;
+	AlgorithmParameters *params;
 
 	cudaTextureObject_t imgs[2];
-	cudaArray* cuArray[2];
-
+	cudaArray *cuArray[2];
 
 	GlobalState()
 	{
@@ -44,8 +47,5 @@ public:
 		delete lines;
 	}
 };
-
-
-
 
 #endif //GLOBAL_STATE_H

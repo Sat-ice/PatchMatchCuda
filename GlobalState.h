@@ -31,7 +31,7 @@ public:
 
 	float *grax1, grax2, gray1, gray2, weigs1, weigs2;
 
-	curandState *cs;
+	curandState *cs[2];
 	AlgorithmParameters *params;
 
 	cudaTextureObject_t imgs[2];

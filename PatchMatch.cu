@@ -179,7 +179,7 @@ __global__ void InitializeRandomDisparityPlane_cu(GlobalState& gs, int view)
 	if(p.y >= rows)
 		return;
 	const int center = p.y * cols + p.x;
-	curandState local_state = gs.cs[center];
+	curandState local_state = gs.cs[view][center];
 	curand_init(clock64(), p.y, p.x, &local_state);
 	float3 norm;
 	gs.planes[view][center].point = make_float3(p.x,p.y,curand_between(&local_state, min_disparity, max_disparity));
@@ -223,7 +223,7 @@ __global__ void InitializeRandomPlane_cu(GlobalState& gs)
 }
 
 template<typename T>
-__device__ void SpatialPropagation_cu(GlobalState& gs, const int2& pt1, const int2& pt2)
+__device__ void SpatialPropagation_cu(GlobalState& gs, const int2& pt1, const int2& pt2, int view)
 {
 	const int center1 = pt1.y * gs.lines->cols + pt1.x;
 	const int center2 = pt2.y * gs.lines->cols + pt2.x;
@@ -235,10 +235,23 @@ __device__ void SpatialPropagation_cu(GlobalState& gs, const int2& pt1, const in
 		gs.lines->cost[center1] = new_cost;
 		gs.lines->norm4[center1] = new_norm;
 	}
+
+	// my code here
+	{
+	const int c1 = pt1.y*gs.cols+pt1.x;
+	const int c2 = pt2.y*gs.cols+pt2.x;
+	const float3 n1 = gs.planes1[view][c1].normal;
+	const float3 n2 = gs.planes1[view][c2].normal;
+	const float old_cost = EvaluatePlaneCost_cu<T>(pt1, n1, gs);
+	const float new_cost = EvaluatePlaneCost_cu<T>(pt1, n2, gs);
+	if(new_cost<old_cost)
+	{
+		gs.planes1[view][c1].normal = n2;
+	}
 }
 
 template<typename T>
-__device__ void CheckboardSpatialPropClose_cu(GlobalState& gs, const int2& pt)
+__device__ void CheckboardSpatialPropClose_cu(GlobalState& gs, const int2& pt, int view)
 {
 
 	if(pt.x >= gs.lines->cols)
@@ -249,67 +262,83 @@ __device__ void CheckboardSpatialPropClose_cu(GlobalState& gs, const int2& pt)
 	// up
 	if(pt.y > 0)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y - 1));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y - 1), view);
+	}
+	if(pt.y -3>= 0)
+	{
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y - 3), view);
 	}
 	if(pt.y - 5 >= 0)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y - 5));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y - 5), view);
 	}
 
 	// down
 	if(pt.y < gs.lines->rows - 1)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y + 1));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y + 1), view);
+	}
+	if(pt.y +3 < gs.lines->rows)
+	{
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y + 3), view);
 	}
 	if(pt.y + 5< gs.lines->rows)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y + 5));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x, pt.y + 5), view);
 	}
 
 	// left
 	if(pt.x > 0)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x - 1, pt.y));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x - 1, pt.y), view);
+	}
+	if(pt.x  - 3 >= 0)
+	{
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x - 3, pt.y), view);
 	}
 	if(pt.x  - 5 >= 0)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x - 5, pt.y));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x - 5, pt.y), view);
 	}
 	// right
 	if(pt.x < gs.lines->cols - 1)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x + 1, pt.y));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x + 1, pt.y), view);
+	}
+	if(pt.x +3< gs.lines->cols)
+	{
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x + 3, pt.y), view);
 	}
 	if(pt.x + 5 < gs.lines->cols)
 	{
-		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x + 5, pt.y));
+		SpatialPropagation_cu<T>(gs, pt, make_int2(pt.x + 5, pt.y), view);
 	}
 }
 
 template<typename T>
-__global__ void RedSpatialPropClose_cu(GlobalState& gs)
+__global__ void RedSpatialPropClose_cu(GlobalState& gs, int view)
 {
 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
 	if(threadIdx.x % 2 == 0)
 		pt.y = pt.y * 2 + 1;
 	else
 		pt.y = pt.y * 2;
-	CheckboardSpatialPropClose_cu<T>(gs, pt);
+	CheckboardSpatialPropClose_cu<T>(gs, pt, view);
 }
 
 template<typename T>
-__global__ void BlackSpatialPropClose_cu(GlobalState& gs)
+__global__ void BlackSpatialPropClose_cu(GlobalState& gs, int view)
 {
 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
 	if(threadIdx.x % 2 == 0)
 		pt.y = pt.y * 2;
 	else
 		pt.y = pt.y * 2 + 1;
-	CheckboardSpatialPropClose_cu<T>(gs, pt);
+	CheckboardSpatialPropClose_cu<T>(gs, pt, view);
 }
 
 template<typename T>
-__device__ void CheckboardPlaneRefinement_cu(GlobalState& gs, const int2& pt)
+__device__ void CheckboardPlaneRefinement_cu(GlobalState& gs, const int2& pt, int view)
 {
 	if(pt.x >= gs.lines->cols)
 		return;
@@ -319,13 +348,13 @@ __device__ void CheckboardPlaneRefinement_cu(GlobalState& gs, const int2& pt)
 	const int center = pt.y * gs.lines->cols + pt.x;
 	const float4 old_norm = gs.lines->norm4[center];
 
-	float max_delta_z = gs.params->max_disparity;
+	float max_delta_z = gs.params->max_disparity/2;
 	float max_delta_n = 1.0f;
 	float end_z = 0.1f;
 
 	while(max_delta_z >= end_z)
 	{
-		curandState local_state = gs.cs[center];
+		curandState local_state = gs.cs[view][center];
 		curand_init(clock64(), pt.y, pt.x, &local_state);
 
 		float4 delta_norm;
@@ -335,14 +364,17 @@ __device__ void CheckboardPlaneRefinement_cu(GlobalState& gs, const int2& pt)
 		delta_norm.w = curand_between(&local_state, -max_delta_z, max_delta_z);
 		
 		float4 new_norm = old_norm + delta_norm;
+		float3 old_norm = gs.planes[view][center].normal;
 		Normalize(&new_norm);
 		float new_cost = EvaluatePlaneCost_cu<T>(pt, new_norm, gs);
-		float old_cost = gs.lines->cost[center];
+		float old_cost = EvaluatePlaneCost_cu<T>(pt, old_norm, gs);
+		//float old_cost = gs.lines->cost[center];
 
 		if(new_cost < old_cost)
 		{
 			gs.lines->cost[center] = new_cost;
 			gs.lines->norm4[center] = new_norm;
+			gs.planes[view][center].norm = new_norm;
 		}
 
 		max_delta_z /= 2.0f;
@@ -353,25 +385,25 @@ __device__ void CheckboardPlaneRefinement_cu(GlobalState& gs, const int2& pt)
 }
 
 template<typename T>
-__global__ void RedPlaneRefinement_cu(GlobalState& gs)
+__global__ void RedPlaneRefinement_cu(GlobalState& gs, int view)
 {
 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
 	if(threadIdx.x % 2 == 0)
 		pt.y = pt.y * 2 + 1;
 	else
 		pt.y = pt.y * 2;
-	CheckboardPlaneRefinement_cu<T>(gs, pt);
+	CheckboardPlaneRefinement_cu<T>(gs, pt, view);
 }
 
 template<typename T>
-__global__ void BlackPlaneRefinement_cu(GlobalState& gs)
+__global__ void BlackPlaneRefinement_cu(GlobalState& gs, int view)
 {
 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
 	if(threadIdx.x % 2 == 0)
 		pt.y = pt.y * 2;
 	else
 		pt.y = pt.y * 2 + 1;
-	CheckboardPlaneRefinement_cu<T>(gs, pt);
+	CheckboardPlaneRefinement_cu<T>(gs, pt,view);
 }
 
 // template<typename T>
@@ -447,6 +479,25 @@ __global__ void CheckValidity_cu(GlobalState& gs)
 	gs.lines->validity[center] = fabsf(disp - corr_disp) <= 1;
 }
 
+__global__ void ViewPropagation_cu(GlobalState& gs, int view)
+{
+	int sign = (view == 0) ? -1 : 1;
+	DisparityPlane view_plane = planes_[view](y, x);
+
+	int mx, my;
+	DisparityPlane new_plane = view_plane.ViewTransform(x, y, sign, mx, my);
+
+	if(mx < 0 || my < 0 || mx >= cols_ || my >= rows_)
+		return;
+
+	float& old_cost = costs_[1 - view].at<float>(my, mx);
+	float  new_cost = PlaneMatchCost(new_plane, my, mx, 1 - view);
+	if(new_cost < old_cost)
+	{
+		planes_[1 - view](my, mx) = new_plane;
+		old_cost = new_cost;
+	}
+}
 __global__ void FillInvalidPixel(GlobalState& gs)
 {
 	int2 pt = make_int2(blockIdx.x * blockDim.x + threadIdx.x, blockIdx.y * blockDim.y + threadIdx.y);
@@ -553,7 +604,8 @@ void PatchMatch(GlobalState& gs)
 	int cols = gs.lines->cols;
 	
 
-	cudaMalloc(&gs.cs, rows * cols * sizeof(curandState));
+	cudaMalloc(&gs.cs[0], rows * cols * sizeof(curandState));
+	cudaMalloc(&gs.cs[1], rows * cols * sizeof(curandState));
 
 	dim3 init_rand_block(32, 16, 1);
 	dim3 init_rand_grid((cols + init_rand_block.x - 1) / init_rand_block.x, (rows + init_rand_block.y - 1) / init_rand_block.y, 1);
@@ -573,16 +625,20 @@ void PatchMatch(GlobalState& gs)
 	
 	for(int it = 0; it < gs.params->iterations; ++it)
 	{
-		RedSpatialPropClose_cu<T><<<grid, block>>>(gs);
+		RedSpatialPropClose_cu<T><<<grid, block>>>(gs, 0);
+		RedSpatialPropClose_cu<T><<<grid, block>>>(gs, 1);
 		cudaDeviceSynchronize();
 
-		RedPlaneRefinement_cu<T><<<grid, block>>>(gs);
+		RedPlaneRefinement_cu<T><<<grid, block>>>(gs, 0);
+		RedPlaneRefinement_cu<T><<<grid, block>>>(gs, 1);
 		cudaDeviceSynchronize();
 
-		BlackSpatialPropClose_cu<T><<<grid, block>>>(gs);
+		BlackSpatialPropClose_cu<T><<<grid, block>>>(gs, 0);
+		BlackSpatialPropClose_cu<T><<<grid, block>>>(gs, 1);
 		cudaDeviceSynchronize();
 
-		BlackPlaneRefinement_cu<T><<<grid, block>>>(gs);
+		BlackPlaneRefinement_cu<T><<<grid, block>>>(gs, 0);
+		BlackPlaneRefinement_cu<T><<<grid, block>>>(gs, 1);
 		cudaDeviceSynchronize();
 	}
 	/* ComputeDisparityMat_cu<<<init_rand_grid, init_rand_block>>>(gs); */
